@@ -25,6 +25,19 @@
 #include <TupleSpace/TupleSpace.hpp>
 #include <TupleSpace/TcpConnectionHandlerAgent.hpp>
 
+class Player
+{
+public:
+    Player(float height, bool team);
+    virtual ~Player();
+    sf3d::Vector3f position;
+    sf3d::Vector3f motion;
+    sf3d::Cuboid* appearance;
+    float direction;
+    float height;
+    bool team;
+};
+
 class ObjModel : public sf3d::Model
 {
 private:
@@ -177,6 +190,46 @@ private:
     std::vector<FaceData> m_faceData;
 };
 
+Player::Player(float height, bool team) :
+    height(height),
+    team(team)
+{
+    appearance = new sf3d::Cuboid(sf3d::Vector3f(5.0f, height, 5.0f));
+    appearance->setColor(team?sf3d::Color::Cyan:sf3d::Color::Magenta);
+    appearance->setOrigin(sf3d::Vector3f(0.0f, -height, 0.0f));
+}
+
+Player::~Player()
+{
+    delete appearance;
+}
+
+std::vector<std::string> split(const std::string& str, const std::string& delimiter)
+{
+    std::vector<std::string> result;
+    std::string temp;
+    unsigned int counter = 0;
+    for (unsigned int i = 0; i != str.size(); ++i)
+    {
+        temp.push_back(str[i]);
+        if (str[i] == delimiter[counter])
+        {
+            ++counter;
+            if (counter == delimiter.size())
+            {
+                result.push_back(temp.substr(0,temp.size()-counter));
+                temp.clear();
+                counter = 0;
+            }
+        }
+    }
+    if (!temp.empty())
+    {
+        result.push_back(temp);
+    }
+    return result;
+}
+
 template <typename T>
 sf3d::Vector2<T> operator *(const sf3d::Vector2<T>& left, const sf3d::Vector2<T>& right)
 {
@@ -253,6 +306,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 {
     std::string host;
     std::string name;
+    std::map<std::string, Player*> players;
     std::vector<std::string> peers;
     std::vector<sf3d::Packet*> packets;
     TcpConnectionHandlerAgent* agent = nullptr;
@@ -295,6 +349,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     sf3d::Vector3f movement;
     sf3d::Vector3f rightVector;
     sf3d::Vector3f offset;
+    sf3d::Vector3f step;
     sf3d::Vector3f origin = camera.getPosition();
     float aspectRatio = static_cast<float>(window.getSize().x) / static_cast<float>(window.getSize().y);
     sf3d::Vector3f downscaleFactor(1.0f / static_cast<float>(window.getSize().x) * aspectRatio, -1.0f / static_cast<float>(window.getSize().y), 1.0f);
@@ -350,16 +405,17 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 if (arguments.size() > 3)
                 {
                     agent = new TcpConnectionHandlerAgent(sf3d::IpAddress(arguments[2]), 9001);
-                    window.setTitle("Client "+name);
+                    window.setTitle("Client "+name+" Team "+std::to_string(team));
                 }
                 else
                 {
-                    agent = new TcpConnectionHandlerAgent(9001, 255);
-                    window.setTitle("Server "+name);
                     role = true;
+                    team = false;
                     host = name;
+                    agent = new TcpConnectionHandlerAgent(9001, 255);
+                    window.setTitle("Server "+name+" Team "+std::to_string(team));
                 }
-                team = (bool)atoi(arguments.back().c_str());
+                team = static_cast<bool>(atoi(arguments.back().c_str()));
             }
         }
         else
@@ -467,6 +523,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 
             movement = getNormalized(direction*sf3d::Vector3f(1.0f, 0.0f, 1.0f));
 
+            step = offset;
+
             // W key pressed : move forward
             if (sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::W))
             {
@@ -528,6 +586,16 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 
             camera.setPosition(origin + offset);
             camera.move(sf3d::Vector3f(0.0f, height, 0.0f));
+
+            if ((agent != nullptr) && (!peers.empty()))
+            {
+                sf3d::Vector3f position = origin+offset;
+                sf3d::Vector3f motion = offset-step;
+                std::string response = "\tW"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(atan2f(direction.z, direction.x));
+                sf3d::Packet* packet = new sf3d::Packet();
+                packet->append(response.c_str(), response.size());
+                packets.push_back(packet);
+            }
         }
 
         upVector = glm::cross(glm::vec3(direction.x, direction.y, direction.z), glm::vec3(rightVector.x, rightVector.y, rightVector.z));
@@ -560,6 +628,14 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         frameTexture.draw(axisX);
         frameTexture.draw(axisY);
         frameTexture.draw(axisZ);
+        for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
+        {
+            Player* player = iter->second;
+            player->position += player->motion*delta;
+            player->appearance->setPosition(player->position);
+            player->appearance->setRotation(player->direction*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+            frameTexture.draw(*player->appearance);
+        }
 
         // Disable lighting and reset to 2D view to draw information
         sf3d::Light::disableLighting();
@@ -587,18 +663,44 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         if (agent != nullptr)
         {
             Tuple* reception = tupleSpace->get("RECEIVE_PACKET");
-            if (reception != nullptr)
+            while (reception != nullptr)
             {
+                bool walk = false;
                 sf3d::Packet* packet = static_cast<sf3d::Packet*>(reception->getItemAsVoid(0));
                 std::string message = std::string(static_cast<const char*>(packet->getData()), packet->getDataSize());
                 message = message.substr(message.find_first_of('\t')).substr(1);
-                std::cout << message << std::endl;
+                if (message.front() != 'W')
+                {
+                    std::cout << message << std::endl;
+                }
                 delete packet;
                 delete reception;
                 if (!message.empty())
                 {
                     switch (message.front())
                     {
+                        case 'W':
+                            walk = true;
+                            {
+                                std::string peer = message.substr(1, message.find_first_of('\t')-1);
+                                if (peer != name)
+                                {
+                                    if (std::find(peers.begin(), peers.end(), peer) != peers.end())
+                                    {
+                                        std::vector<std::string> splits = split(message.substr(message.find_first_of('\t')).substr(1)," ");
+                                        if (splits.size() == 7)
+                                        {
+                                            Player* player = players[peer];
+                                            sf3d::Vector3f position = sf3d::Vector3f(atof(splits[0].c_str()), atof(splits[1].c_str()), atof(splits[2].c_str()));
+                                            sf3d::Vector3f motion = sf3d::Vector3f(atof(splits[3].c_str()), atof(splits[4].c_str()), atof(splits[5].c_str()));
+                                            player->position = position;
+                                            player->motion = motion;
+                                            player->direction = atof(splits[6].c_str());
+                                        }
+                                    }
+                                }
+                            }
+                            break;
                         case 'D':
                             {
                                 std::string peer = message.substr(1);
@@ -619,6 +721,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                         auto iter = std::find(peers.begin(), peers.end(), peer);
                                         if (iter != peers.end())
                                         {
+                                            delete players[peer];
+                                            players.erase(players.find(peer));
                                             peers.erase(iter);
                                             if (role)
                                             {
@@ -634,7 +738,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                             break;
                         case 'C':
                             {
-                                std::string peer = message.substr(1);
+                                std::string peer = message.substr(1, message.find_first_of('\t')-1);
                                 if (peer == name)
                                 {
                                     result = -3;
@@ -643,10 +747,11 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                 {
                                     if (std::find(peers.begin(), peers.end(), peer) == peers.end())
                                     {
+                                        players[peer] = new Player(height, static_cast<bool>(atoi(message.substr(message.find_first_of('\t')).substr(1).c_str())));
                                         peers.push_back(peer);
                                         if (role)
                                         {
-                                            std::string response = "\tA"+name+"\t"+peer;
+                                            std::string response = "\tA"+name+"\t"+peer+"\t"+message.substr(message.find_first_of('\t')).substr(1);
                                             packet = new sf3d::Packet();
                                             packet->append(response.c_str(), response.size());
                                             packets.push_back(packet);
@@ -666,15 +771,17 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                 {
                                     if (!role)
                                     {
+                                        players[peer] = new Player(height, false);
                                         peers.push_back(peer);
                                         host = peer;
-                                        peer = message.substr(message.find_first_of('\t')).substr(1);
+                                        peer = message.substr(message.find_first_of('\t')).substr(1, message.find_last_of('\t')-(message.find_first_of('\t')+1));
                                         if (peer == name)
                                         {
                                             announced = true;
                                         }
                                         else
                                         {
+                                            players[peer] = new Player(height, static_cast<bool>(atoi(message.substr(message.find_last_of('\t')).substr(1).c_str())));
                                             peers.push_back(peer);
                                         }
                                     }
@@ -682,11 +789,15 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                             }
                             break;
                     }
-                    for (int i = 0; i != peers.size(); ++i)
+                    if (!walk)
                     {
-                        std::cout << name << " | " << host << " | " << peers[i] << " | " << i << std::endl;
+                        for (int i = 0; i != peers.size(); ++i)
+                        {
+                            std::cout << name << " | " << host << " | " << peers[i] << " | " << i << std::endl;
+                        }
                     }
                 }
+                reception = tupleSpace->get("RECEIVE_PACKET");
             }
             if (announcement)
             {
@@ -700,7 +811,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 announcement = true;
                 if (!role)
                 {
-                    std::string response = "\tC"+name;
+                    std::string response = "\tC"+name+"\t"+std::to_string(static_cast<int>(team));
                     sf3d::Packet* packet = new sf3d::Packet();
                     packet->append(response.c_str(), response.size());
                     packets.push_back(packet);
@@ -711,7 +822,10 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 Tuple* tuple = new Tuple("v", packets.front());
                 std::string message = std::string(static_cast<const char*>(packets.front()->getData()), packets.front()->getDataSize());
                 message = message.substr(message.find_first_of('\t'));
-                std::cout << message << std::endl;
+                if (message.substr(1).front() != 'W')
+                {
+                    std::cout << message << std::endl;
+                }
                 packets.erase(packets.begin());
                 tupleSpace->put("PACKET_READY", tuple);
             }
@@ -719,19 +833,28 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         }
     }
 
-    packets.clear();
-
-    if ((agent != nullptr) && (result != 3))
+    if ((agent != nullptr) && (result != 3) && (!peers.empty()))
     {
         std::string response = "\tD"+name;
         sf3d::Packet* packet = new sf3d::Packet();
-        Tuple* tuple = new Tuple("v", packet);
         packet->append(response.c_str(), response.size());
+        Tuple* tuple = new Tuple("v", packet);
         std::string message = std::string(static_cast<const char*>(packet->getData()), packet->getDataSize());
         message = message.substr(message.find_first_of('\t'));
         std::cout << message << std::endl;
         tupleSpace->put("PACKET_READY", tuple);
     }
+
+    for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
+    {
+        delete iter->second;
+    }
+    players.clear();
+
+    peers.clear();
+    packets.clear();
+
+    //delete agent;
 
     return result;
 }
