@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <SFML3D/Network.hpp>
 #include <SFML3D/Graphics.hpp>
 #include <SFML3D/Window/Event.hpp>
 #include <SFML3D/Window/Mouse.hpp>
@@ -19,6 +20,8 @@
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#include <TupleSpace/TupleSpace.hpp>
+#include <TupleSpace/TcpConnectionHandlerAgent.hpp>
 
 class ObjModel : public sf3d::Model
 {
@@ -244,8 +247,10 @@ sf3d::Vector3f getProjection(const sf3d::Vector3f& point, const sf3d::Vector3f& 
     return sf3d::Vector3f(getDotProduct(axisFirst,displacement),getDotProduct(axisSecond,displacement),getDotProduct(normal,displacement)); // x = distance along first axis, y = distance along second axis, z = distance along normal
 }
 
-int run(sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
+int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
 {
+    TcpConnectionHandlerAgent* agent = nullptr;
+    bool role = false;
     bool jump = false;
     bool team = true;
     bool minigame = false;
@@ -325,7 +330,18 @@ int run(sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std
     {
         if (arguments.size() > 1)
         {
-            team = (bool)atoi(arguments[1].c_str());
+            if (arguments.size() > 2)
+            {
+                agent = new TcpConnectionHandlerAgent(sf3d::IpAddress(arguments[1]), 9001);
+                window.setTitle("Client");
+            }
+            else
+            {
+                agent = new TcpConnectionHandlerAgent(9001, 255);
+                window.setTitle("Server");
+                role = true;
+            }
+            team = (bool)atoi(arguments.back().c_str());
         }
         camera.setPosition(sf3d::Vector3f(125.0f, 0.0f, 125.0f)*(team?-1.0f:1.0f));
         origin = camera.getPosition();
@@ -378,7 +394,7 @@ int run(sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std
         {
             continue;
         }
-        delta = clock.restart().asSeconds();
+        delta = clock.restart().asSeconds() * 0.5f;
         time += delta;
         if (!focus)
         {
@@ -532,6 +548,26 @@ int run(sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std
         window.clear(sf3d::Color(128, 128, 128));
         window.draw(frame);
         window.display();
+
+        if (role)
+        {
+            sf3d::Packet* packet = new sf3d::Packet();
+            Tuple* tuple = new Tuple("v", packet);
+            *packet << "\t"+std::to_string(delta);
+            tupleSpace->put("PACKET_READY", tuple);
+        }
+        else
+        {
+            Tuple* reception = tupleSpace->get("RECEIVE_PACKET");
+            if (reception != nullptr)
+            {
+                sf3d::Packet* packet = static_cast<sf3d::Packet*>(reception->getItemAsVoid(0));
+                std::string message = std::string(static_cast<const char*>(packet->getData()), packet->getDataSize());
+                std::cout << message.substr(message.find_first_of('\t')) << std::endl;
+                delete packet;
+                delete reception;
+            }
+        }
     }
 
     return 0;
@@ -541,6 +577,7 @@ int main(int argc, char** argv)
 {
     int result;
     std::vector<std::string> arguments;
+    TupleSpace* tupleSpace = new TupleSpace();
     sf3d::RenderWindow* window = new sf3d::RenderWindow();
     sf3d::RenderTexture* frameTexture = new sf3d::RenderTexture();
     window->create(sf3d::VideoMode(1280, 720), "Chronolateral");
@@ -553,8 +590,9 @@ int main(int argc, char** argv)
         arguments.push_back(std::string(argv[i]));
         std::cout << i << '\t' << arguments.back() << std::endl;
     }
-    result = run(*window, *frameTexture, arguments);
+    result = run(tupleSpace, *window, *frameTexture, arguments);
     delete frameTexture;
     delete window;
+    delete tupleSpace;
     return result;
 }
