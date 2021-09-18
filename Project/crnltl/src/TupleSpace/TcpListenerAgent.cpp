@@ -48,6 +48,7 @@ void TcpListenerAgent::handle()
 	mNewSocket->setBlocking(false);
 	++mConnectionCount;
 	isConnectionMade = true;
+	mListener.close();
 }
 
 

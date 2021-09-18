@@ -4,6 +4,7 @@
 #include <TupleSpace/Agent.hpp>
 #include <SFML3D/Network/TcpSocket.hpp>
 #include <SFML3D/Network/Packet.hpp>
+#include <vector>
 
 class TcpReceiveAgent : public Agent
 {
@@ -12,7 +13,7 @@ class TcpReceiveAgent : public Agent
 /****** PROPERTIES *****/
 protected:
     /// Contains received data before it is processed by DisassemblerAgent
-    sf3d::Packet mPacket;
+    std::vector<sf3d::Packet> mPackets;
 
     /// List of connections that will be sending data to this agent.
     sf3d::TcpSocket** mSockets;
