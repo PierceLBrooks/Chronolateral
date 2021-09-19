@@ -389,7 +389,7 @@ sf3d::Vector3f getProjection(const sf3d::Vector3f& point, const sf3d::Vector3f& 
     return sf3d::Vector3f(getDotProduct(axisFirst,displacement),getDotProduct(axisSecond,displacement),getDotProduct(normal,displacement)); // x = distance along first axis, y = distance along second axis, z = distance along normal
 }
 
-int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
+int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
 {
     std::string tail = "\n\r";
     std::string victim;
@@ -399,6 +399,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     std::vector<Bullet*> bullets;
     std::vector<std::string> peers;
     std::vector<sf3d::Packet*> packets;
+    std::vector<std::pair<sf3d::Text*, float>> texts;
     TcpConnectionHandlerAgent* agent = nullptr;
     bool role = false;
     bool jump = false;
@@ -407,7 +408,9 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     bool focus = true;
     bool announced = false;
     bool announcement = false;
+    bool list = false;
     int result = 0;
+    int lettering = 24;
     float scale = 50.0f;
     float animation = 0.0f;
     float speed = 1.0f;
@@ -815,7 +818,26 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 
         // Disable depth testing for sf3d::Text because it requires blending
         frameTexture.enableDepthTest(false);
-        //frameTexture.draw(text);
+        for (int i = 0; i != texts.size(); ++i)
+        {
+            sf3d::Text* text = std::get<0>(texts[i]);
+            if (std::get<1>(texts[i]) < 0.0f)
+            {
+                text->setColor(sf3d::Color::Black);
+                texts[i] = std::pair<sf3d::Text*, float>(text, 7.5);
+            }
+            texts[i] = std::pair<sf3d::Text*, float>(text, std::get<1>(texts[i])-delta);
+            if (std::get<1>(texts[i]) < 0.0f)
+            {
+                std::cout << text->getString().toAnsiString() << std::endl;
+                delete text;
+                texts.erase(texts.begin()+i);
+                --i;
+                continue;
+            }
+            text->setPosition(sf3d::Vector3f(gap, gap*gap, 0.0f));
+            frameTexture.draw(*text);
+        }
         frameTexture.enableDepthTest(true);
 
         // Enable lighting again
@@ -1032,6 +1054,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                         auto iter = std::find(peers.begin(), peers.end(), peer);
                                         if (iter != peers.end())
                                         {
+                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                            std::get<0>(texts.back())->setString(sf3d::String(peer+" disconnected"));
                                             delete players[peer];
                                             players.erase(players.find(peer));
                                             peers.erase(iter);
@@ -1073,6 +1097,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                                 packet->append(response.c_str(), response.size());
                                                 packets.push_back(packet);
                                             }
+                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                            std::get<0>(texts.back())->setString(sf3d::String(peer+" connected"));
                                         }
                                     }
                                 }
@@ -1087,20 +1113,25 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                 }
                                 else
                                 {
-                                    if (!role)
+                                    if (std::find(peers.begin(), peers.end(), peer) == peers.end())
                                     {
-                                        players[peer] = new Player(height, false);
-                                        peers.push_back(peer);
-                                        host = peer;
-                                        peer = message.substr(message.find_first_of('\t')).substr(1, message.find_last_of('\t')-(message.find_first_of('\t')+1));
-                                        if (peer == name)
+                                        if (!role)
                                         {
-                                            announced = true;
-                                        }
-                                        else
-                                        {
-                                            players[peer] = new Player(height, static_cast<bool>(atoi(message.substr(message.find_last_of('\t')).substr(1).c_str())));
+                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                            std::get<0>(texts.back())->setString(sf3d::String(peer+" connected"));
+                                            players[peer] = new Player(height, false);
                                             peers.push_back(peer);
+                                            host = peer;
+                                            peer = message.substr(message.find_first_of('\t')).substr(1, message.find_last_of('\t')-(message.find_first_of('\t')+1));
+                                            if (peer == name)
+                                            {
+                                                announced = true;
+                                            }
+                                            else
+                                            {
+                                                players[peer] = new Player(height, static_cast<bool>(atoi(message.substr(message.find_last_of('\t')).substr(1).c_str())));
+                                                peers.push_back(peer);
+                                            }
                                         }
                                     }
                                 }
@@ -1142,6 +1173,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             victim = target;
                                             players[target]->hit = true;
                                             players[target]->appearance->setColor(sf3d::Color::Black);
+                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                            std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
                                         }
                                         else
                                         {
@@ -1156,6 +1189,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             victim = target;
                                             players[target]->hit = true;
                                             players[target]->appearance->setColor(sf3d::Color::Black);
+                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                            std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
                                         }
                                     }
                                 }
@@ -1214,11 +1249,40 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 
         if (!victim.empty())
         {
-            std::cout << victim << std::endl;
+            //std::cout << victim << std::endl;
             if (players.find(victim) != players.end())
             {
                 players[victim]->hit = true;
             }
+        }
+
+        if (sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::Tab))
+        {
+            if (!list)
+            {
+                if ((name.empty()) && (!arguments.empty()))
+                {
+                    name = arguments.front();
+                }
+                list = true;
+                texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                std::get<0>(texts.back())->setString(sf3d::String(name));
+                std::cout << name << std::endl;
+                for (int i = 0; i != peers.size(); ++i)
+                {
+                    texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                    std::get<0>(texts.back())->setString(sf3d::String(peers[i]));
+                    std::cout << peers[i] << std::endl;
+                }
+            }
+            else
+            {
+                std::cout << "list" << std::endl;
+            }
+        }
+        else
+        {
+            list = false;
         }
     }
 
@@ -1255,9 +1319,10 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
 
 int main(int argc, char** argv)
 {
-    int result;
+    int result = 0;
     std::vector<std::string> arguments;
     TupleSpace* tupleSpace = nullptr;
+    sf3d::Font* font = new sf3d::Font();
     sf3d::RenderWindow* window = new sf3d::RenderWindow();
     sf3d::RenderTexture* frameTexture = new sf3d::RenderTexture();
     window->create(sf3d::VideoMode(1280, 720), "Chronolateral");
@@ -1274,10 +1339,22 @@ int main(int argc, char** argv)
     {
         tupleSpace = new TupleSpace();
     }
-    result = run(tupleSpace, *window, *frameTexture, arguments);
+    if (font->loadFromFile("sansation.ttf"))
+    {
+        result = run(tupleSpace, *font, *window, *frameTexture, arguments);
+    }
+    else
+    {
+        std::cout << "font fail" << std::endl;
+    }
+    delete font;
     delete frameTexture;
     delete window;
     std::cout << result << std::endl;
+    if (result == 3)
+    {
+        std::cout << "host disconnected" << std::endl;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     return result;
 }
