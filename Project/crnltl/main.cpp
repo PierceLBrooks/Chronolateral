@@ -25,6 +25,7 @@
 #include <glm/gtx/transform.hpp>
 #include <TupleSpace/TupleSpace.hpp>
 #include <TupleSpace/TcpConnectionHandlerAgent.hpp>
+#include <NFE/CellularAutomaton.hpp>
 
 class Player
 {
@@ -408,7 +409,12 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     sf3d::SoundBuffer* landBuffer = nullptr;
     sf3d::SoundBuffer* shotBuffer = nullptr;
     sf3d::SoundBuffer* jumpBuffer = nullptr;
+    sf3d::Image* cellsImage = nullptr;
+    sf3d::Texture* cellsTexture = nullptr;
+    sf3d::Sprite* cellsSprite = nullptr;
     TcpConnectionHandlerAgent* agent = nullptr;
+    NFE::CellularAutomaton* cells = nullptr;
+    unsigned char* maze = nullptr;
     bool role = false;
     bool jump = false;
     bool team = true;
@@ -420,6 +426,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     int hurts = 4;
     int result = 0;
     int lettering = 24;
+    int generations = 50;
     float scale = 50.0f;
     float animation = 0.0f;
     float speed = 1.0f;
@@ -826,7 +833,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 sf3d::Vector3f motion = offset-step;
                 if ((getDistance(motion, sf3d::Vector3f()) > 1.0f) || (deltaX != 0) || (deltaY != 0))
                 {
-                    std::string response = "\tM"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(angle)+tail;
+                    std::string response = "\tR"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(angle)+tail;
                     sf3d::Packet* packet = new sf3d::Packet();
                     packet->append(response.c_str(), response.size());
                     packets.push_back(packet);
@@ -838,7 +845,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 if (sf3d::Mouse::isButtonPressed(sf3d::Mouse::Button::Left))
                 {
                     Bullet* bullet = new Bullet(life, team, direction);
-                    shoot = 0.05f;
+                    shoot = 0.5f;
                     bullets.push_back(bullet);
                     bullet->appearance->setSize(sf3d::Vector3f(range, 1.0f, 1.0f));
                     bullet->appearance->setOrigin(-bullet->appearance->getSize()*0.5f);
@@ -846,7 +853,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                     bullet->appearance->rotate(pitch*(180.0f/pi), rightVector);
                     bullet->appearance->setPosition(camera.getPosition());
                     bullet->appearance->move(-sf3d::Vector3f(0.0f, height, 0.0f)*0.5f);
-                    if (agent != nullptr)
+                    if ((agent != nullptr) && (!peers.empty()))
                     {
                         std::string response = "\tS"+name+"\t"+std::to_string(direction.x)+" "+std::to_string(direction.y)+" "+std::to_string(direction.z)+" "+std::to_string(pitch)+tail;
                         sf3d::Packet* packet = new sf3d::Packet();
@@ -1003,6 +1010,14 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             text->setPosition(sf3d::Vector3f(gap, gap*gap*static_cast<float>(i), 0.0f));
             frameTexture.draw(*text);
         }
+        if (cellsSprite != nullptr)
+        {
+            sf3d::Vector2f position = sf3d::Vector2f(frameTexture.getSize())*0.5f;
+            cellsSprite->setOrigin(sf3d::Vector3f(static_cast<float>(cellsTexture->getSize().x)*0.5f, static_cast<float>(cellsTexture->getSize().y)*0.5f, 0.0f));
+            cellsSprite->setPosition(sf3d::Vector3f(position.x, position.y, 0.0f));
+            cellsSprite->setScale(sf3d::Vector3f(static_cast<float>(frameTexture.getSize().y)/static_cast<float>(cellsTexture->getSize().y), static_cast<float>(frameTexture.getSize().y)/static_cast<float>(cellsTexture->getSize().y), 1.0f));
+            frameTexture.draw(*cellsSprite);
+        }
 
         // Reset view to our camera and enable lighting again
         frameTexture.setView(camera);
@@ -1029,7 +1044,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 {
                     message = message.substr(1);
                 }
-                if (message.front() != 'M')
+                if (message.front() != 'R')
                 {
                     std::cout << "recv " << message << std::endl;
                 }
@@ -1141,7 +1156,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                                 }
                             }
                             break;
-                        case 'M':
+                        case 'R':
                             omit = true;
                             {
                                 std::string peer = message.substr(1, message.find_first_of('\t')-1);
@@ -1204,6 +1219,11 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                                                 packet->append(response.c_str(), response.size());
                                                 packets.push_back(packet);
                                             }
+                                            if (victim == peer)
+                                            {
+                                                minigame = false;
+                                                victim = "";
+                                            }
                                         }
                                     }
                                 }
@@ -1237,6 +1257,26 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                                             }
                                             texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
                                             std::get<0>(texts.back())->setString(sf3d::String(peer+" connected"));
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        case 'F':
+                            {
+                                std::string peer = message.substr(1, message.find_first_of('\t')-1);
+                                if ((peer != name) && (victim == peer))
+                                {
+                                    if (std::find(peers.begin(), peers.end(), peer) != peers.end())
+                                    {
+                                        minigame = false;
+                                        victim = "";
+                                        if (role)
+                                        {
+                                            std::string response = "\tF"+peer+tail;
+                                            packet = new sf3d::Packet();
+                                            packet->append(response.c_str(), response.size());
+                                            packets.push_back(packet);
                                         }
                                     }
                                 }
@@ -1393,7 +1433,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 Tuple* tuple = new Tuple("v", packets.front());
                 std::string message = std::string(static_cast<const char*>(packets.front()->getData()), packets.front()->getDataSize());
                 message = message.substr(message.find_first_of('\t'));
-                if (message.substr(1).front() != 'M')
+                if (message.substr(1).front() != 'R')
                 {
                     std::cout << message << std::endl;
                 }
@@ -1409,6 +1449,18 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             if (players.find(victim) != players.end())
             {
                 players[victim]->hit = true;
+            }
+            if ((victim == name) && (cells == nullptr))
+            {
+                cells = NFE::CellularAutomaton::getConwayGameOfLife(sf3d::Vector2u(25, 25), new NFE::Random());
+                for (int i = 0; i != generations; ++i)
+                {
+                    cells->goToNextGeneration();
+                }
+                cellsImage = cells->getImage(false);
+                cellsTexture = new sf3d::Texture();
+                cellsTexture->loadFromImage(*cellsImage);
+                cellsSprite = new sf3d::Sprite(*cellsTexture);
             }
         }
 
@@ -1508,13 +1560,20 @@ int main(int argc, char** argv)
     {
         tupleSpace = new TupleSpace();
     }
-    if (font->loadFromFile("sansation.ttf"))
+    if (tupleSpace != nullptr)
     {
-        result = run(tupleSpace, *font, *window, *frameTexture, arguments);
+        if (font->loadFromFile("sansation.ttf"))
+        {
+            result = run(tupleSpace, *font, *window, *frameTexture, arguments);
+        }
+        else
+        {
+            std::cout << "font fail" << std::endl;
+        }
     }
     else
     {
-        std::cout << "font fail" << std::endl;
+        window->close();
     }
     delete font;
     delete frameTexture;
@@ -1525,5 +1584,17 @@ int main(int argc, char** argv)
         std::cout << "host disconnected" << std::endl;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    if (tupleSpace == nullptr)
+    {
+        NFE::CellularAutomaton* cells = NFE::CellularAutomaton::getConwayGameOfLife(sf3d::Vector2u(25, 25), new NFE::Random());
+        for (int i = 0; i != 50; ++i)
+        {
+            cells->goToNextGeneration();
+        }
+        sf3d::Image* image = cells->getImage(false);
+        image->saveToFile("cells.png");
+        delete cells;
+        delete image;
+    }
     return result;
 }
