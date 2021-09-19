@@ -41,6 +41,7 @@ public:
     float height;
     bool team;
     bool hit;
+    bool self;
 };
 
 class Bullet
@@ -210,9 +211,10 @@ private:
 Player::Player(float height, bool team) :
     height(height),
     team(team),
-    hit(false)
+    hit(false),
+    self(false)
 {
-    appearance = new sf3d::Cuboid(sf3d::Vector3f(5.0f, height, 5.0f));
+    appearance = new sf3d::Cuboid(sf3d::Vector3f(10.0f, height*2.0f, 10.0f));
     appearance->setColor(team?sf3d::Color::Cyan:sf3d::Color::Magenta);
     appearance->setOrigin(sf3d::Vector3f(0.0f, -height, 0.0f));
 }
@@ -332,6 +334,11 @@ float getDistance(const sf3d::Vector2f& left, const sf3d::Vector2f& right)
     return sqrtf(powf(right.y-left.y, 2.0f)+powf(right.x-left.x, 2.0f));
 }
 
+float getDistance(const sf3d::Vector3f& left, const sf3d::Vector3f& right)
+{
+    return sqrtf(powf(right.z-left.z, 2.0f)+powf(right.y-left.y, 2.0f)+powf(right.x-left.x, 2.0f));
+}
+
 float getDotProduct(const sf3d::Vector2f& p1, const sf3d::Vector2f& p2)
 {
     return (p1.x*p2.x)+(p1.y*p2.y);
@@ -384,6 +391,8 @@ sf3d::Vector3f getProjection(const sf3d::Vector3f& point, const sf3d::Vector3f& 
 
 int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
 {
+    std::string tail = "\n\r";
+    std::string victim;
     std::string host;
     std::string name;
     std::map<std::string, Player*> players;
@@ -419,6 +428,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     float range = 5000.0f;
     float gap = 25.0f;
     float radius = 5.0f;
+    float life = 0.25f;
     sf3d::Clock clock;
     sf3d::Color color;
     sf3d::Light lightCamera;
@@ -553,6 +563,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                     window.setTitle("Server "+name+" Team "+std::to_string(team));
                 }
                 team = static_cast<bool>(atoi(arguments.back().c_str()));
+                players[name] = new Player(height, team);
+                players[name]->self = true;
             }
         }
         else
@@ -721,22 +733,23 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 }
             }
 
-            if (offset.x < wallWest.getPosition().x+gap)
+            if (origin.x+offset.x < wallWest.getPosition().x+gap)
             {
-                offset.x = wallWest.getPosition().x+gap;
+                offset.x = (wallWest.getPosition().x+gap)-origin.x;
             }
-            if (offset.x > wallEast.getPosition().x-gap)
+            if (origin.x+offset.x > wallEast.getPosition().x-gap)
             {
-                offset.x = wallEast.getPosition().x-gap;
+                offset.x = (wallEast.getPosition().x-gap)-origin.x;
             }
-            if (offset.z < wallNorth.getPosition().z+gap)
+            if (origin.z+offset.z < wallNorth.getPosition().z+gap)
             {
-                offset.z = wallNorth.getPosition().z+gap;
+                offset.z = (wallNorth.getPosition().z+gap)-origin.z;
             }
-            if (offset.z > wallSouth.getPosition().z-gap)
+            if (origin.z+offset.z > wallSouth.getPosition().z-gap)
             {
-                offset.z = wallSouth.getPosition().z-gap;
+                offset.z = (wallSouth.getPosition().z-gap)-origin.z;
             }
+            //std::cout << offset.x << " " << offset.z << std::endl;
 
             camera.setPosition(origin + offset);
             camera.move(sf3d::Vector3f(0.0f, height, 0.0f));
@@ -745,17 +758,20 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             {
                 sf3d::Vector3f position = origin+offset;
                 sf3d::Vector3f motion = offset-step;
-                std::string response = "\tW"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(angle);
-                sf3d::Packet* packet = new sf3d::Packet();
-                packet->append(response.c_str(), response.size());
-                packets.push_back(packet);
+                if ((getDistance(motion, sf3d::Vector3f()) > 1.0f) || (deltaX != 0) || (deltaY != 0))
+                {
+                    std::string response = "\tW"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(angle)+tail;
+                    sf3d::Packet* packet = new sf3d::Packet();
+                    packet->append(response.c_str(), response.size());
+                    packets.push_back(packet);
+                }
             }
 
             if (shoot <= 0.0f)
             {
                 if (sf3d::Mouse::isButtonPressed(sf3d::Mouse::Button::Left))
                 {
-                    Bullet* bullet = new Bullet(0.25f, team, direction);
+                    Bullet* bullet = new Bullet(life, team, direction);
                     shoot = 0.05f;
                     bullets.push_back(bullet);
                     bullet->appearance->setSize(sf3d::Vector3f(range, 1.0f, 1.0f));
@@ -766,7 +782,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                     bullet->appearance->move(-sf3d::Vector3f(0.0f, height, 0.0f)*0.5f);
                     if (agent != nullptr)
                     {
-                        std::string response = "\tS"+name+"\t"+std::to_string(direction.x)+" "+std::to_string(direction.y)+" "+std::to_string(direction.z)+" "+std::to_string(pitch);
+                        std::string response = "\tS"+name+"\t"+std::to_string(direction.x)+" "+std::to_string(direction.y)+" "+std::to_string(direction.z)+" "+std::to_string(pitch)+tail;
                         sf3d::Packet* packet = new sf3d::Packet();
                         packet->append(response.c_str(), response.size());
                         packets.push_back(packet);
@@ -822,15 +838,19 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
         {
             Player* player = iter->second;
-            sf3d::FloatBox bounds = iter->second->appearance->getGlobalBounds();
-            sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
-            sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
-            player->min = min;
-            player->max = max;
-            player->position += player->motion*delta;
-            player->appearance->setPosition(player->position);
-            player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
-            frameTexture.draw(*player->appearance);
+            if (!player->self)
+            {
+                sf3d::FloatBox bounds = iter->second->appearance->getGlobalBounds();
+                sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
+                sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
+                player->min = min;
+                player->max = max;
+                player->position += player->motion*delta;
+                player->motion *= 0.5f;
+                player->appearance->setPosition(player->position);
+                player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+                frameTexture.draw(*player->appearance);
+            }
         }
         for (int i = 0; i != bullets.size(); ++i)
         {
@@ -850,21 +870,22 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             }
             for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
             {
-                if (iter->second->hit)
-                {
-                    continue;
-                }
-                if (iter->second->team == bullet->team)
+                if ((iter->second->hit) || (iter->second->self) || (iter->second->team == bullet->team))
                 {
                     continue;
                 }
                 if (checkIntersection(bullet->appearance->getPosition(), bullet->direction, iter->second->min, iter->second->max))
                 {
-                    std::string response = "\tH"+name+"\t"+iter->first;
+                    std::string response = "\tH"+name+"\t"+iter->first+tail;
                     sf3d::Packet* packet = new sf3d::Packet();
                     packet->append(response.c_str(), response.size());
                     packets.push_back(packet);
-                    iter->second->appearance->setColor(sf3d::Color::White);
+                    if (role)
+                    {
+                      iter->second->appearance->setColor(sf3d::Color::White);
+                      victim = iter->first;
+                      minigame = true;
+                    }
                     iter->second->hit = true;
                 }
             }
@@ -902,6 +923,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 sf3d::Packet* packet = static_cast<sf3d::Packet*>(reception->getItemAsVoid(0));
                 std::string message = std::string(static_cast<const char*>(packet->getData()), packet->getDataSize());
                 message = message.substr(message.find_first_of('\t')).substr(1);
+                message = message.substr(0, message.find_first_of(tail));
                 if (message.front() != 'W')
                 {
                     std::cout << message << std::endl;
@@ -926,7 +948,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             sf3d::Vector3f right;
                                             sf3d::Vector3f aim = sf3d::Vector3f(atof(splits[0].c_str()), atof(splits[1].c_str()), atof(splits[2].c_str()));
                                             Player* player = players[peer];
-                                            Bullet* bullet = new Bullet(0.25f, player->team, aim);
+                                            Bullet* bullet = new Bullet(life, player->team, aim);
+                                            player->hit = false;
                                             player->aim = atof(splits[3].c_str());
                                             player->direction = aim;
                                             bullet->peer = true;
@@ -938,11 +961,17 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             bullets.push_back(bullet);
                                             bullet->appearance->setSize(sf3d::Vector3f(range, 1.0f, 1.0f));
                                             bullet->appearance->setOrigin(-bullet->appearance->getSize()*0.5f);
-                                            bullet->appearance->setColor(sf3d::Color::White);
                                             bullet->appearance->setRotation((-player->angle)*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
                                             bullet->appearance->rotate(player->aim*(180.0f/pi), right);
                                             bullet->appearance->setPosition(player->position);
                                             bullet->appearance->move(sf3d::Vector3f(0.0f, height, 0.0f));
+                                            if (role)
+                                            {
+                                                std::string response = "\t"+message+tail;
+                                                packet = new sf3d::Packet();
+                                                packet->append(response.c_str(), response.size());
+                                                packets.push_back(packet);
+                                            }
                                         }
                                     }
                                 }
@@ -965,6 +994,14 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             player->position = position;
                                             player->motion = motion;
                                             player->angle = atof(splits[6].c_str());
+                                            player->hit = false;
+                                            if (role)
+                                            {
+                                                std::string response = "\t"+message+tail;
+                                                packet = new sf3d::Packet();
+                                                packet->append(response.c_str(), response.size());
+                                                packets.push_back(packet);
+                                            }
                                         }
                                     }
                                 }
@@ -995,7 +1032,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                             peers.erase(iter);
                                             if (role)
                                             {
-                                                std::string response = "\tD"+peer;
+                                                std::string response = "\tD"+peer+tail;
                                                 packet = new sf3d::Packet();
                                                 packet->append(response.c_str(), response.size());
                                                 packets.push_back(packet);
@@ -1020,10 +1057,17 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                         peers.push_back(peer);
                                         if (role)
                                         {
-                                            std::string response = "\tA"+name+"\t"+peer+"\t"+message.substr(message.find_first_of('\t')).substr(1);
+                                            std::string response = "\tA"+name+"\t"+peer+"\t"+message.substr(message.find_first_of('\t')).substr(1)+tail;
                                             packet = new sf3d::Packet();
                                             packet->append(response.c_str(), response.size());
                                             packets.push_back(packet);
+                                            if (minigame)
+                                            {
+                                                response = "\tH"+host+"\t"+victim+tail;
+                                                packet = new sf3d::Packet();
+                                                packet->append(response.c_str(), response.size());
+                                                packets.push_back(packet);
+                                            }
                                         }
                                     }
                                 }
@@ -1057,6 +1101,64 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                                 }
                             }
                             break;
+                        case 'H':
+                            {
+                                std::string shooter = message.substr(1, message.find_first_of('\t')-1);
+                                std::string target = message.substr(message.find_first_of('\t')).substr(1, message.find_last_of('\t')-(message.find_first_of('\t')+1));
+                                std::cout << shooter << " " << target << "?" << std::endl;
+                                if ((players.find(shooter) != players.end()) && (players.find(target) != players.end()))
+                                {
+                                    if ((shooter == name) || (target == name))
+                                    {
+                                        Player* player = players[name];
+                                        player->angle = atan2f(direction.z, direction.x);
+                                        player->appearance->setPosition(player->position);
+                                        player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+                                        sf3d::FloatBox bounds = player->appearance->getGlobalBounds();
+                                        sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
+                                        sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
+                                        player->min = min;
+                                        player->max = max;
+                                        player->position = camera.getPosition();
+                                        player->direction = direction;
+                                    }
+                                    if (role)
+                                    {
+                                        sf3d::Vector3f position = players[shooter]->position;
+                                        position += sf3d::Vector3f(0.0f, height, 0.0f);
+                                        if (checkIntersection(position, players[shooter]->direction, players[target]->min, players[target]->max))
+                                        {
+                                            std::string response = "\t"+message+tail;
+                                            packet = new sf3d::Packet();
+                                            packet->append(response.c_str(), response.size());
+                                            packets.push_back(packet);
+                                            minigame = true;
+                                            victim = target;
+                                            players[target]->hit = true;
+                                            players[target]->appearance->setColor(sf3d::Color::Black);
+                                        }
+                                        else
+                                        {
+                                            std::cout << "no hit" << std::endl;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (!minigame)
+                                        {
+                                            minigame = true;
+                                            victim = target;
+                                            players[target]->hit = true;
+                                            players[target]->appearance->setColor(sf3d::Color::Black);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    std::cout << "no shoot" << std::endl;
+                                }
+                            }
+                            break;
                     }
                     if (!omit)
                     {
@@ -1080,7 +1182,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 announcement = true;
                 if (!role)
                 {
-                    std::string response = "\tC"+name+"\t"+std::to_string(static_cast<int>(team));
+                    std::string response = "\tC"+name+"\t"+std::to_string(static_cast<int>(team))+tail;
                     sf3d::Packet* packet = new sf3d::Packet();
                     packet->append(response.c_str(), response.size());
                     packets.push_back(packet);
@@ -1100,11 +1202,20 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             }
             packets.clear();
         }
+
+        if (!victim.empty())
+        {
+            std::cout << victim << std::endl;
+            if (players.find(victim) != players.end())
+            {
+                players[victim]->hit = true;
+            }
+        }
     }
 
     if ((agent != nullptr) && (result != 3) && (!peers.empty()))
     {
-        std::string response = "\tD"+name;
+        std::string response = "\tD"+name+tail;
         sf3d::Packet* packet = new sf3d::Packet();
         packet->append(response.c_str(), response.size());
         Tuple* tuple = new Tuple("v", packet);
