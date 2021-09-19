@@ -11,6 +11,7 @@
 #include <cmath>
 #include <thread>
 #include <chrono>
+#include <SFML3D/Audio.hpp>
 #include <SFML3D/Network.hpp>
 #include <SFML3D/Graphics.hpp>
 #include <SFML3D/Window/Event.hpp>
@@ -400,6 +401,13 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     std::vector<std::string> peers;
     std::vector<sf3d::Packet*> packets;
     std::vector<std::pair<sf3d::Text*, float>> texts;
+    std::vector<std::pair<sf3d::Sound*, sf3d::SoundBuffer*>> hurtSounds;
+    sf3d::Sound* landSound = nullptr;
+    sf3d::Sound* shotSound = nullptr;
+    sf3d::Sound* jumpSound = nullptr;
+    sf3d::SoundBuffer* landBuffer = nullptr;
+    sf3d::SoundBuffer* shotBuffer = nullptr;
+    sf3d::SoundBuffer* jumpBuffer = nullptr;
     TcpConnectionHandlerAgent* agent = nullptr;
     bool role = false;
     bool jump = false;
@@ -409,6 +417,8 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     bool announced = false;
     bool announcement = false;
     bool list = false;
+    int hurt = 0;
+    int hurts = 4;
     int result = 0;
     int lettering = 24;
     float scale = 50.0f;
@@ -536,6 +546,50 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     reticleVertical.setSize(sf3d::Vector2f(2.5f, 15.0f));
     reticleVertical.setOrigin(reticleVertical.getSize()*0.5f);
     reticleVertical.setPosition(sf3d::Vector2f(frameTexture.getSize())*0.5f);
+
+    for (int i = 0; i != hurts; ++i)
+    {
+        sf3d::SoundBuffer* buffer = new sf3d::SoundBuffer();
+        if (buffer->loadFromFile("hurt"+std::to_string(i)+".wav"))
+        {
+            hurtSounds.push_back(std::pair<sf3d::Sound*, sf3d::SoundBuffer*>(new sf3d::Sound(*buffer), buffer));
+        }
+        else
+        {
+            delete buffer;
+            hurtSounds.push_back(std::pair<sf3d::Sound*, sf3d::SoundBuffer*>(nullptr, nullptr));
+        }
+    }
+    landBuffer = new sf3d::SoundBuffer();
+    if (landBuffer->loadFromFile("land.wav"))
+    {
+        landSound = new sf3d::Sound(*landBuffer);
+    }
+    else
+    {
+        delete landBuffer;
+        landBuffer = nullptr;
+    }
+    shotBuffer = new sf3d::SoundBuffer();
+    if (shotBuffer->loadFromFile("shot.wav"))
+    {
+        shotSound = new sf3d::Sound(*shotBuffer);
+    }
+    else
+    {
+        delete shotBuffer;
+        shotBuffer = nullptr;
+    }
+    jumpBuffer = new sf3d::SoundBuffer();
+    if (jumpBuffer->loadFromFile("jump.wav"))
+    {
+        jumpSound = new sf3d::Sound(*jumpBuffer);
+    }
+    else
+    {
+        delete jumpBuffer;
+        jumpBuffer = nullptr;
+    }
 
     color = sf3d::Color::White;
 
@@ -719,6 +773,10 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             {
                 if (!jump)
                 {
+                    if (jumpSound != nullptr)
+                    {
+                        jumpSound->play();
+                    }
                     jump = true;
                     fall = velocity / gravity;
                 }
@@ -730,6 +788,10 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 offset += sf3d::Vector3f(0.0f, fall, 0.0f);
                 if (offset.y < 0.0f)
                 {
+                    if (landSound != nullptr)
+                    {
+                        landSound->play();
+                    }
                     offset.y = 0.0f;
                     fall = 0.0f;
                     jump = false;
@@ -789,6 +851,10 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                         sf3d::Packet* packet = new sf3d::Packet();
                         packet->append(response.c_str(), response.size());
                         packets.push_back(packet);
+                    }
+                    if (shotSound != nullptr)
+                    {
+                        shotSound->play();
                     }
                 }
             }
@@ -907,6 +973,17 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                         iter->second->appearance->setColor(sf3d::Color::Black);
                         victim = iter->first;
                         minigame = true;
+                        texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                        std::get<0>(texts.back())->setString(sf3d::String(name+" shot "+iter->first));
+                        ++hurt;
+                        if (hurt == hurts)
+                        {
+                            hurt = 0;
+                        }
+                        if (std::get<0>(hurtSounds[hurt]) != nullptr)
+                        {
+                            std::get<0>(hurtSounds[hurt])->play();
+                        }
                     }
                     iter->second->hit = true;
                 }
@@ -991,12 +1068,71 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                                             bullet->appearance->rotate(player->aim*(180.0f/pi), right);
                                             bullet->appearance->setPosition(player->position);
                                             bullet->appearance->move(sf3d::Vector3f(0.0f, height, 0.0f));
-                                            if (role)
+                                            if ((role) && (!minigame))
                                             {
                                                 std::string response = "\t"+message+tail;
                                                 packet = new sf3d::Packet();
                                                 packet->append(response.c_str(), response.size());
                                                 packets.push_back(packet);
+                                                for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
+                                                {
+                                                    std::string shooter = peer;
+                                                    std::string target = iter->first;
+                                                    if (shooter == target)
+                                                    {
+                                                        continue;
+                                                    }
+                                                    if (players[shooter]->team == players[target]->team)
+                                                    {
+                                                        continue;
+                                                    }
+                                                    if (players[target]->hit)
+                                                    {
+                                                        continue;
+                                                    }
+                                                    if ((shooter == name) || (target == name))
+                                                    {
+                                                        Player* player = players[name];
+                                                        player->angle = atan2f(direction.z, direction.x);
+                                                        player->appearance->setPosition(player->position);
+                                                        player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+                                                        sf3d::FloatBox bounds = player->appearance->getGlobalBounds();
+                                                        sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
+                                                        sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
+                                                        player->min = min;
+                                                        player->max = max;
+                                                        player->position = origin+offset;
+                                                        player->direction = direction;
+                                                    }
+                                                    sf3d::Vector3f position = players[shooter]->position;
+                                                    position += sf3d::Vector3f(0.0f, height, 0.0f);
+                                                    if (checkIntersection(position, players[shooter]->direction, players[target]->min, players[target]->max))
+                                                    {
+                                                        std::string response = "\tH"+shooter+"\t"+target+tail;
+                                                        packet = new sf3d::Packet();
+                                                        packet->append(response.c_str(), response.size());
+                                                        packets.push_back(packet);
+                                                        minigame = true;
+                                                        victim = target;
+                                                        players[target]->hit = true;
+                                                        players[target]->appearance->setColor(sf3d::Color::Black);
+                                                        texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                                        std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
+                                                        ++hurt;
+                                                        if (hurt == hurts)
+                                                        {
+                                                            hurt = 0;
+                                                        }
+                                                        if (std::get<0>(hurtSounds[hurt]) != nullptr)
+                                                        {
+                                                            std::get<0>(hurtSounds[hurt])->play();
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        std::cout << "no hit" << std::endl;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1143,54 +1279,72 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                                 std::string shooter = message.substr(1, message.find_first_of('\t')-1);
                                 std::string target = message.substr(message.find_first_of('\t')).substr(1, message.find_last_of('\t')-(message.find_first_of('\t')+1));
                                 std::cout << shooter << " " << target << "?" << std::endl;
-                                if ((players.find(shooter) != players.end()) && (players.find(target) != players.end()))
+                                if ((players.find(shooter) != players.end()) && (players.find(target) != players.end()) && (!minigame))
                                 {
-                                    if ((shooter == name) || (target == name))
+                                    if ((!players[target]->hit) || (!role))
                                     {
-                                        Player* player = players[name];
-                                        player->angle = atan2f(direction.z, direction.x);
-                                        player->appearance->setPosition(player->position);
-                                        player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
-                                        sf3d::FloatBox bounds = player->appearance->getGlobalBounds();
-                                        sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
-                                        sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
-                                        player->min = min;
-                                        player->max = max;
-                                        player->position = origin+offset;
-                                        player->direction = direction;
-                                    }
-                                    if (role)
-                                    {
-                                        sf3d::Vector3f position = players[shooter]->position;
-                                        position += sf3d::Vector3f(0.0f, height, 0.0f);
-                                        if (checkIntersection(position, players[shooter]->direction, players[target]->min, players[target]->max))
+                                        if ((shooter == name) || (target == name))
                                         {
-                                            std::string response = "\t"+message+tail;
-                                            packet = new sf3d::Packet();
-                                            packet->append(response.c_str(), response.size());
-                                            packets.push_back(packet);
-                                            minigame = true;
-                                            victim = target;
-                                            players[target]->hit = true;
-                                            players[target]->appearance->setColor(sf3d::Color::Black);
-                                            texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
-                                            std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
+                                            Player* player = players[name];
+                                            player->angle = atan2f(direction.z, direction.x);
+                                            player->appearance->setPosition(player->position);
+                                            player->appearance->setRotation(player->angle*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+                                            sf3d::FloatBox bounds = player->appearance->getGlobalBounds();
+                                            sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
+                                            sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
+                                            player->min = min;
+                                            player->max = max;
+                                            player->position = origin+offset;
+                                            player->direction = direction;
+                                        }
+                                        if (role)
+                                        {
+                                            sf3d::Vector3f position = players[shooter]->position;
+                                            position += sf3d::Vector3f(0.0f, height, 0.0f);
+                                            if (checkIntersection(position, players[shooter]->direction, players[target]->min, players[target]->max))
+                                            {
+                                                std::string response = "\t"+message+tail;
+                                                packet = new sf3d::Packet();
+                                                packet->append(response.c_str(), response.size());
+                                                packets.push_back(packet);
+                                                minigame = true;
+                                                victim = target;
+                                                players[target]->hit = true;
+                                                players[target]->appearance->setColor(sf3d::Color::Black);
+                                                texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
+                                                std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
+                                                ++hurt;
+                                                if (hurt == hurts)
+                                                {
+                                                    hurt = 0;
+                                                }
+                                                if (std::get<0>(hurtSounds[hurt]) != nullptr)
+                                                {
+                                                    std::get<0>(hurtSounds[hurt])->play();
+                                                }
+                                            }
+                                            else
+                                            {
+                                                std::cout << "no hit" << std::endl;
+                                            }
                                         }
                                         else
                                         {
-                                            std::cout << "no hit" << std::endl;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (!minigame)
-                                        {
                                             minigame = true;
                                             victim = target;
                                             players[target]->hit = true;
                                             players[target]->appearance->setColor(sf3d::Color::Black);
                                             texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
                                             std::get<0>(texts.back())->setString(sf3d::String(shooter+" shot "+target));
+                                            ++hurt;
+                                            if (hurt == hurts)
+                                            {
+                                                hurt = 0;
+                                            }
+                                            if (std::get<0>(hurtSounds[hurt]) != nullptr)
+                                            {
+                                                std::get<0>(hurtSounds[hurt])->play();
+                                            }
                                         }
                                     }
                                 }
@@ -1298,6 +1452,23 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         tupleSpace->put("PACKET_READY", tuple);
     }
 
+    for (int i = 0; i != texts.size(); ++i)
+    {
+        delete std::get<0>(texts[i]);
+    }
+    texts.clear();
+    for (int i = 0; i != hurtSounds.size(); ++i)
+    {
+        delete std::get<0>(hurtSounds[i]);
+        delete std::get<1>(hurtSounds[i]);
+    }
+    hurtSounds.clear();
+    delete jumpSound;
+    delete jumpBuffer;
+    delete shotSound;
+    delete shotBuffer;
+    delete landSound;
+    delete landBuffer;
     for (int i = 0; i != bullets.size(); ++i)
     {
         delete bullets[i];
