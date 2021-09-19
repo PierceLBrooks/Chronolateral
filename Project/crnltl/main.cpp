@@ -416,7 +416,6 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     bool focus = true;
     bool announced = false;
     bool announcement = false;
-    bool list = false;
     int hurt = 0;
     int hurts = 4;
     int result = 0;
@@ -442,6 +441,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     float gap = 25.0f;
     float radius = 5.0f;
     float life = 0.25f;
+    float list = 0.0f;
     sf3d::Clock clock;
     sf3d::Color color;
     sf3d::Light lightCamera;
@@ -884,26 +884,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
 
         // Disable depth testing for sf3d::Text because it requires blending
         frameTexture.enableDepthTest(false);
-        for (int i = 0; i != texts.size(); ++i)
-        {
-            sf3d::Text* text = std::get<0>(texts[i]);
-            if (std::get<1>(texts[i]) < 0.0f)
-            {
-                text->setColor(sf3d::Color::Black);
-                texts[i] = std::pair<sf3d::Text*, float>(text, 7.5);
-            }
-            texts[i] = std::pair<sf3d::Text*, float>(text, std::get<1>(texts[i])-delta);
-            if (std::get<1>(texts[i]) < 0.0f)
-            {
-                std::cout << text->getString().toAnsiString() << std::endl;
-                delete text;
-                texts.erase(texts.begin()+i);
-                --i;
-                continue;
-            }
-            text->setPosition(sf3d::Vector3f(gap, gap*gap, 0.0f));
-            frameTexture.draw(*text);
-        }
+        //frameTexture.draw(*text);
         frameTexture.enableDepthTest(true);
 
         // Enable lighting again
@@ -1001,6 +982,26 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         reticleVertical.setScale(sf3d::Vector3f(1.0f, reticleHorizontal.getScale().x, 1.0f));
         frameTexture.draw(reticleHorizontal);
         frameTexture.draw(reticleVertical);
+        for (int i = 0; i != texts.size(); ++i)
+        {
+            sf3d::Text* text = std::get<0>(texts[i]);
+            if (std::get<1>(texts[i]) < 0.0f)
+            {
+                text->setColor(sf3d::Color::Black);
+                texts[i] = std::pair<sf3d::Text*, float>(text, 7.5);
+            }
+            texts[i] = std::pair<sf3d::Text*, float>(text, std::get<1>(texts[i])-delta);
+            if (std::get<1>(texts[i]) < 0.0f)
+            {
+                std::cout << text->getString().toAnsiString() << std::endl;
+                delete text;
+                texts.erase(texts.begin()+i);
+                --i;
+                continue;
+            }
+            text->setPosition(sf3d::Vector3f(gap, gap*gap, 0.0f));
+            frameTexture.draw(*text);
+        }
 
         // Reset view to our camera and enable lighting again
         frameTexture.setView(camera);
@@ -1410,15 +1411,15 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             }
         }
 
-        if (sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::Tab))
+        if (list <= 0.0f)
         {
-            if (!list)
+            if (sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::Tab))
             {
+                list = 7.5f;
                 if ((name.empty()) && (!arguments.empty()))
                 {
                     name = arguments.front();
                 }
-                list = true;
                 texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
                 std::get<0>(texts.back())->setString(sf3d::String(name));
                 std::cout << name << std::endl;
@@ -1429,14 +1430,10 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                     std::cout << peers[i] << std::endl;
                 }
             }
-            else
-            {
-                std::cout << "list" << std::endl;
-            }
         }
         else
         {
-            list = false;
+            list -= delta;
         }
     }
 
