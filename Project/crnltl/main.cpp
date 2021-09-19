@@ -228,6 +228,7 @@ Bullet::Bullet(float life, bool team, const sf3d::Vector3f& direction) :
     direction(direction)
 {
     appearance = new sf3d::Cuboid();
+    appearance->setColor(sf3d::Color::Black);
     peer = false;
 }
 
@@ -416,16 +417,32 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     float shoot = 0.0f;
     float angle = 0.0f;
     float range = 5000.0f;
-    sf3d::Light light;
+    float gap = 25.0f;
+    float radius = 5.0f;
     sf3d::Clock clock;
     sf3d::Color color;
-    sf3d::RectangleShape reticleVertical;
-    sf3d::RectangleShape reticleHorizontal;
-    sf3d::Sprite frame(frameTexture.getTexture());
+    sf3d::Light lightCamera;
+    sf3d::Light lightNortheast;
+    sf3d::Light lightNorthwest;
+    sf3d::Light lightSoutheast;
+    sf3d::Light lightSouthwest;
+    sf3d::SphericalPolyhedron lampNortheast(radius);
+    sf3d::SphericalPolyhedron lampNorthwest(radius);
+    sf3d::SphericalPolyhedron lampSoutheast(radius);
+    sf3d::SphericalPolyhedron lampSouthwest(radius);
+    sf3d::Cuboid wallNorth(sf3d::Vector3f(1000.0f, velocity, 1.0f));
+    sf3d::Cuboid wallSouth(sf3d::Vector3f(1000.0f, velocity, 1.0f));
+    sf3d::Cuboid wallEast(sf3d::Vector3f(1.0f, velocity, 1000.0f));
+    sf3d::Cuboid wallWest(sf3d::Vector3f(1.0f, velocity, 1000.0f));
+    sf3d::Cuboid floor(sf3d::Vector3f(1000.0f, 1.0f, 1000.0f));
+    sf3d::Cuboid ceiling(sf3d::Vector3f(1000.0f, 1.0f, 1000.0f));
     sf3d::Cuboid axisX(sf3d::Vector3f(500.0f, 2.0f, 2.0f));
     sf3d::Cuboid axisY(sf3d::Vector3f(2.0f, 500.0f, 2.0f));
     sf3d::Cuboid axisZ(sf3d::Vector3f(2.0f, 2.0f, 500.0f));
-    sf3d::Camera camera(90.0f, 0.001f, 1000.0f);
+    sf3d::Camera camera(90.0f, 0.001f, 2500.0f);
+    sf3d::Sprite frame(frameTexture.getTexture());
+    sf3d::RectangleShape reticleVertical;
+    sf3d::RectangleShape reticleHorizontal;
     sf3d::Vector2f coordinate;
     sf3d::Vector3f previous;
     sf3d::Vector3f direction;
@@ -439,14 +456,56 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     camera.scale(1.0f / aspectRatio, 1.0f, 1.0f);
     camera.setPosition(sf3d::Vector3f());
     window.setView(camera);
-    light.setColor(sf3d::Color::White);
-    light.setAmbientIntensity(0.5f);
-    light.setDiffuseIntensity(1.0f);
-    light.setLinearAttenuation(0.002f);
-    light.setQuadraticAttenuation(0.0005f);
-    light.enable();
+    lightCamera.setColor(sf3d::Color::White);
+    lightCamera.setAmbientIntensity(0.5f);
+    lightCamera.setDiffuseIntensity(1.0f);
+    lightCamera.setLinearAttenuation(0.002f);
+    lightCamera.setQuadraticAttenuation(0.0005f);
+    lightCamera.enable();
+    lightNortheast.setColor(sf3d::Color::Red);
+    lightNortheast.setAmbientIntensity(0.0f);
+    lightNortheast.setDiffuseIntensity(radius*0.5f);
+    lightNortheast.setLinearAttenuation(0.0002f);
+    lightNortheast.setQuadraticAttenuation(0.00005f);
+    lightNortheast.enable();
+    lightNortheast.setPosition(sf3d::Vector3f(500.0f-gap, velocity*0.5f, -500.0f+gap));
+    lightNorthwest.setColor(sf3d::Color::Blue);
+    lightNorthwest.setAmbientIntensity(0.0f);
+    lightNorthwest.setDiffuseIntensity(radius*0.5f);
+    lightNorthwest.setLinearAttenuation(0.0002f);
+    lightNorthwest.setQuadraticAttenuation(0.00005f);
+    lightNorthwest.enable();
+    lightNorthwest.setPosition(sf3d::Vector3f(-500.0f+gap, velocity*0.5f, -500.0f+gap));
+    lightSoutheast.setColor(sf3d::Color::Green);
+    lightSoutheast.setAmbientIntensity(0.0f);
+    lightSoutheast.setDiffuseIntensity(radius*0.5f);
+    lightSoutheast.setLinearAttenuation(0.0002f);
+    lightSoutheast.setQuadraticAttenuation(0.00005f);
+    lightSoutheast.enable();
+    lightSoutheast.setPosition(sf3d::Vector3f(500.0f-gap, velocity*0.5f, 500.0f-gap));
+    lightSouthwest.setColor(sf3d::Color::Yellow);
+    lightSouthwest.setAmbientIntensity(0.0f);
+    lightSouthwest.setDiffuseIntensity(radius*0.5f);
+    lightSouthwest.setLinearAttenuation(0.0002f);
+    lightSouthwest.setQuadraticAttenuation(0.00005f);
+    lightSouthwest.enable();
+    lightSouthwest.setPosition(sf3d::Vector3f(-500.0f+gap, velocity*0.5f, 500.0f-gap));
+    lampNortheast.setColor(lightNortheast.getColor());
+    lampNortheast.setPosition(lightNortheast.getPosition());
+    lampNorthwest.setColor(lightNorthwest.getColor());
+    lampNorthwest.setPosition(lightNorthwest.getPosition());
+    lampSoutheast.setColor(lightSoutheast.getColor());
+    lampSoutheast.setPosition(lightSoutheast.getPosition());
+    lampSouthwest.setColor(lightSouthwest.getColor());
+    lampSouthwest.setPosition(lightSouthwest.getPosition());
     sf3d::Light::enableLighting();
     //frame.setScale(0.75f, 0.75f);
+    floor.setPosition(sf3d::Vector3f(0.0f, 0.0f, 0.0f));
+    ceiling.setPosition(sf3d::Vector3f(0.0f, velocity, 0.0f));
+    wallNorth.setPosition(sf3d::Vector3f(0.0f, velocity*0.5f, -500.0f));
+    wallSouth.setPosition(sf3d::Vector3f(0.0f, velocity*0.5f, 500.0f));
+    wallEast.setPosition(sf3d::Vector3f(500.0f, velocity*0.5f, 0.0f));
+    wallWest.setPosition(sf3d::Vector3f(-500.0f, velocity*0.5f, 0.0f));
     axisX.setColor(sf3d::Color::Red);
     axisX.setPosition(sf3d::Vector3f(0.0f, 0.0f, 0.0f));
     axisX.setOrigin(sf3d::Vector3f(-250.0f, 1.0f, 1.0f));
@@ -512,6 +571,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         }
         camera.setDirection(direction);
     }
+
+    gap /= radius;
 
     clock.restart();
     while (window.isOpen())
@@ -660,6 +721,23 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                 }
             }
 
+            if (offset.x < wallWest.getPosition().x+gap)
+            {
+                offset.x = wallWest.getPosition().x+gap;
+            }
+            if (offset.x > wallEast.getPosition().x-gap)
+            {
+                offset.x = wallEast.getPosition().x-gap;
+            }
+            if (offset.z < wallNorth.getPosition().z+gap)
+            {
+                offset.z = wallNorth.getPosition().z+gap;
+            }
+            if (offset.z > wallSouth.getPosition().z-gap)
+            {
+                offset.z = wallSouth.getPosition().z-gap;
+            }
+
             camera.setPosition(origin + offset);
             camera.move(sf3d::Vector3f(0.0f, height, 0.0f));
 
@@ -682,7 +760,6 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
                     bullets.push_back(bullet);
                     bullet->appearance->setSize(sf3d::Vector3f(range, 1.0f, 1.0f));
                     bullet->appearance->setOrigin(-bullet->appearance->getSize()*0.5f);
-                    bullet->appearance->setColor(sf3d::Color::White);
                     bullet->appearance->setRotation((-angle)*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
                     bullet->appearance->rotate(pitch*(180.0f/pi), rightVector);
                     bullet->appearance->setPosition(camera.getPosition());
@@ -712,7 +789,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         // Clear the window
         frameTexture.clear(sf3d::Color::Black);
 
-        light.setPosition(camera.getPosition());
+        lightCamera.setPosition(camera.getPosition());
 
         // Draw the background
         //frameTexture.draw(sf3d::Color::Black);
@@ -729,9 +806,19 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         sf3d::Light::enableLighting();
 
         // Draw everything
-        frameTexture.draw(axisX);
-        frameTexture.draw(axisY);
-        frameTexture.draw(axisZ);
+        frameTexture.draw(floor);
+        frameTexture.draw(ceiling);
+        frameTexture.draw(wallNorth);
+        frameTexture.draw(wallSouth);
+        frameTexture.draw(wallEast);
+        frameTexture.draw(wallWest);
+        frameTexture.draw(lampNortheast);
+        frameTexture.draw(lampNorthwest);
+        frameTexture.draw(lampSoutheast);
+        frameTexture.draw(lampSouthwest);
+        //frameTexture.draw(axisX);
+        //frameTexture.draw(axisY);
+        //frameTexture.draw(axisZ);
         for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
         {
             Player* player = iter->second;
