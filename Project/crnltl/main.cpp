@@ -441,6 +441,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     float gap = 25.0f;
     float radius = 5.0f;
     float life = 0.25f;
+    float info = 7.5f;
     float list = 0.0f;
     sf3d::Clock clock;
     sf3d::Color color;
@@ -988,7 +989,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             if (std::get<1>(texts[i]) < 0.0f)
             {
                 text->setColor(sf3d::Color::Black);
-                texts[i] = std::pair<sf3d::Text*, float>(text, 7.5);
+                texts[i] = std::pair<sf3d::Text*, float>(text, info);
             }
             texts[i] = std::pair<sf3d::Text*, float>(text, std::get<1>(texts[i])-delta);
             if (std::get<1>(texts[i]) < 0.0f)
@@ -999,7 +1000,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                 --i;
                 continue;
             }
-            text->setPosition(sf3d::Vector3f(gap, gap*gap, 0.0f));
+            text->setPosition(sf3d::Vector3f(gap, gap*gap*static_cast<float>(i), 0.0f));
             frameTexture.draw(*text);
         }
 
@@ -1413,20 +1414,20 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
 
         if (list <= 0.0f)
         {
-            if (sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::Tab))
+            if ((sf3d::Keyboard::isKeyPressed(sf3d::Keyboard::Key::Tab)) && (focus))
             {
-                list = 7.5f;
+                list = info;
                 if ((name.empty()) && (!arguments.empty()))
                 {
                     name = arguments.front();
                 }
                 texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
-                std::get<0>(texts.back())->setString(sf3d::String(name));
+                std::get<0>(texts.back())->setString(sf3d::String("0: "+name));
                 std::cout << name << std::endl;
                 for (int i = 0; i != peers.size(); ++i)
                 {
                     texts.push_back(std::pair<sf3d::Text*, float>(new sf3d::Text(sf3d::String(""), font, lettering), -1.0f));
-                    std::get<0>(texts.back())->setString(sf3d::String(peers[i]));
+                    std::get<0>(texts.back())->setString(sf3d::String(std::to_string(i+1)+": "+peers[i]));
                     std::cout << peers[i] << std::endl;
                 }
             }
