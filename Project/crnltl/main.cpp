@@ -30,12 +30,25 @@ class Player
 public:
     Player(float height, bool team);
     virtual ~Player();
+    sf3d::Vector3f min;
+    sf3d::Vector3f max;
     sf3d::Vector3f position;
     sf3d::Vector3f motion;
     sf3d::Cuboid* appearance;
     float direction;
     float height;
     bool team;
+};
+
+class Bullet
+{
+public:
+    Bullet(float life, bool team, const sf3d::Vector3f& direction);
+    virtual ~Bullet();
+    sf3d::Cuboid* appearance;
+    float life;
+    bool team;
+    sf3d::Vector3f direction;
 };
 
 class ObjModel : public sf3d::Model
@@ -204,6 +217,66 @@ Player::~Player()
     delete appearance;
 }
 
+Bullet::Bullet(float life, bool team, const sf3d::Vector3f& direction) :
+    life(life),
+    team(team),
+    direction(direction)
+{
+   appearance = new sf3d::Cuboid();
+}
+
+Bullet::~Bullet()
+{
+    delete appearance;
+}
+
+void swap(float& left, float& right)
+{
+    float temp = left;
+    left = right;
+    right = temp;
+}
+
+bool checkIntersection(const sf3d::Vector3f& orig, const sf3d::Vector3f& dir, const sf3d::Vector3f& min, const sf3d::Vector3f& max)
+{
+    // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+
+    float tmin = (min.x - orig.x) / dir.x;
+    float tmax = (max.x - orig.x) / dir.x;
+
+    if (tmin > tmax) swap(tmin, tmax);
+
+    float tymin = (min.y - orig.y) / dir.y;
+    float tymax = (max.y - orig.y) / dir.y;
+
+    if (tymin > tymax) swap(tymin, tymax);
+
+    if ((tmin > tymax) || (tymin > tmax))
+        return false;
+
+    if (tymin > tmin)
+        tmin = tymin;
+
+    if (tymax < tmax)
+        tmax = tymax;
+
+    float tzmin = (min.z - orig.z) / dir.z;
+    float tzmax = (max.z - orig.z) / dir.z;
+
+    if (tzmin > tzmax) swap(tzmin, tzmax);
+
+    if ((tmin > tzmax) || (tzmin > tmax))
+        return false;
+
+    if (tzmin > tmin)
+        tmin = tzmin;
+
+    if (tzmax < tmax)
+        tmax = tzmax;
+
+    return true;
+}
+
 std::vector<std::string> split(const std::string& str, const std::string& delimiter)
 {
     std::vector<std::string> result;
@@ -307,6 +380,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     std::string host;
     std::string name;
     std::map<std::string, Player*> players;
+    std::vector<Bullet*> bullets;
     std::vector<std::string> peers;
     std::vector<sf3d::Packet*> packets;
     TcpConnectionHandlerAgent* agent = nullptr;
@@ -333,6 +407,9 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     float height = 15.0f;
     float gravity = 50.0f;
     float fall = 0.0f;
+    float shoot = 0.0f;
+    float angle = 0.0f;
+    float range = 5000.0f;
     sf3d::Light light;
     sf3d::Clock clock;
     sf3d::Color color;
@@ -390,12 +467,7 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
     // Keep the mouse cursor within the window
     sf3d::Mouse::setPosition(sf3d::Vector2i(window.getSize()) / 2, window);
 
-    if (tupleSpace == nullptr)
-    {
-        return 1;
-    }
-
-    if (!arguments.empty())
+    if ((!arguments.empty()) && (tupleSpace != nullptr))
     {
         if (arguments.size() > 1)
         {
@@ -433,10 +505,6 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             direction *= -1.0f;
         }
         camera.setDirection(direction);
-    }
-    else
-    {
-        return -1;
     }
 
     clock.restart();
@@ -512,6 +580,8 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             direction.x = cosf(yaw) * cosf(pitch);
             direction.y = sinf(pitch);
             direction.z = -sinf(yaw) * cosf(pitch);
+            //direction = getNormalized(direction);
+            angle = atan2f(direction.z, direction.x);
             //direction += previous;
             //magnitude = sqrtf((direction.x * direction.x) + (direction.y * direction.y) + (direction.z * direction.z));
             //direction /= magnitude;
@@ -591,10 +661,31 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
             {
                 sf3d::Vector3f position = origin+offset;
                 sf3d::Vector3f motion = offset-step;
-                std::string response = "\tW"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(atan2f(direction.z, direction.x));
+                std::string response = "\tW"+name+"\t"+std::to_string(position.x)+" "+std::to_string(position.y)+" "+std::to_string(position.z)+" "+std::to_string(motion.x)+" "+std::to_string(motion.y)+" "+std::to_string(motion.z)+" "+std::to_string(angle);
                 sf3d::Packet* packet = new sf3d::Packet();
                 packet->append(response.c_str(), response.size());
                 packets.push_back(packet);
+            }
+
+            if (shoot <= 0.0f)
+            {
+                if (sf3d::Mouse::isButtonPressed(sf3d::Mouse::Button::Left))
+                {
+                    Bullet* bullet = new Bullet(0.25f, team, direction);
+                    shoot = 0.05f;
+                    bullets.push_back(bullet);
+                    bullet->appearance->setSize(sf3d::Vector3f(range, 1.0f, 1.0f));
+                    bullet->appearance->setOrigin(-bullet->appearance->getSize()*0.5f);
+                    bullet->appearance->setColor(sf3d::Color::White);
+                    bullet->appearance->setRotation((-angle)*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
+                    bullet->appearance->rotate(pitch*(180.0f/pi), rightVector);
+                    bullet->appearance->setPosition(camera.getPosition());
+                    bullet->appearance->move(-sf3d::Vector3f(0.0f, height, 0.0f)*0.5f);
+                }
+            }
+            else
+            {
+                shoot -= delta;
             }
         }
 
@@ -631,10 +722,35 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
         {
             Player* player = iter->second;
+            sf3d::FloatBox bounds = iter->second->appearance->getGlobalBounds();
+            sf3d::Vector3f min = sf3d::Vector3f(std::min(bounds.left, bounds.left+bounds.width), std::min(bounds.top, bounds.top+bounds.height), std::min(bounds.front, bounds.front+bounds.depth));
+            sf3d::Vector3f max = sf3d::Vector3f(std::max(bounds.left, bounds.left+bounds.width), std::max(bounds.top, bounds.top+bounds.height), std::max(bounds.front, bounds.front+bounds.depth));
+            player->min = min;
+            player->max = max;
             player->position += player->motion*delta;
             player->appearance->setPosition(player->position);
             player->appearance->setRotation(player->direction*(180.0f/pi), sf3d::Vector3f(0.0f, 1.0f, 0.0f));
             frameTexture.draw(*player->appearance);
+        }
+        for (int i = 0; i != bullets.size(); ++i)
+        {
+            Bullet* bullet = bullets[i];
+            bullet->life -= delta;
+            if (bullet->life <= 0.0f)
+            {
+                delete bullet;
+                bullets.erase(bullets.begin()+i);
+                --i;
+                continue;
+            }
+            frameTexture.draw(*bullet->appearance);
+            for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
+            {
+                if (checkIntersection(bullet->appearance->getPosition(), bullet->direction, iter->second->min, iter->second->max))
+                {
+                    iter->second->appearance->setColor(sf3d::Color::White);
+                }
+            }
         }
 
         // Disable lighting and reset to 2D view to draw information
@@ -845,6 +961,11 @@ int run(TupleSpace* tupleSpace, sf3d::RenderWindow& window, sf3d::RenderTexture&
         tupleSpace->put("PACKET_READY", tuple);
     }
 
+    for (int i = 0; i != bullets.size(); ++i)
+    {
+        delete bullets[i];
+    }
+    bullets.clear();
     for (std::map<std::string, Player*>::iterator iter = players.begin(); iter != players.end(); ++iter)
     {
         delete iter->second;
@@ -863,7 +984,7 @@ int main(int argc, char** argv)
 {
     int result;
     std::vector<std::string> arguments;
-    TupleSpace* tupleSpace = new TupleSpace();
+    TupleSpace* tupleSpace = nullptr;
     sf3d::RenderWindow* window = new sf3d::RenderWindow();
     sf3d::RenderTexture* frameTexture = new sf3d::RenderTexture();
     window->create(sf3d::VideoMode(1280, 720), "Chronolateral");
@@ -875,6 +996,10 @@ int main(int argc, char** argv)
     {
         arguments.push_back(std::string(argv[i]));
         std::cout << i << '\t' << arguments.back() << std::endl;
+    }
+    if (arguments.size() > 1)
+    {
+        tupleSpace = new TupleSpace();
     }
     result = run(tupleSpace, *window, *frameTexture, arguments);
     delete frameTexture;
