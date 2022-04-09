@@ -24,7 +24,7 @@
               <switch id="BUILDSTER_OS">
                 <case check="Windows">MinGW Makefiles</case>
                 <case check="Linux">Unix Makefiles</case>
-                <case check="Darwin">Unix Makefiles</case>
+                <case check="Darwin">Xcode</case>
                 <default><quit></quit></default>
               </switch>
             </generator>
@@ -49,7 +49,7 @@
         <remote>
           <url>https://github.com/PierceLBrooks/SFML3D.git</url>
           <git_repo>
-            <branch>3dee</branch>
+            <branch>macos</branch>
             <credentials>
               <username>username</username>
               <password>password</password>
@@ -63,7 +63,7 @@
               <switch id="BUILDSTER_OS">
                 <case check="Windows">MinGW Makefiles</case>
                 <case check="Linux">Unix Makefiles</case>
-                <case check="Darwin">Unix Makefiles</case>
+                <case check="Darwin">Xcode</case>
                 <default><quit></quit></default>
               </switch>
             </generator>
@@ -101,11 +101,16 @@
           <switch id="BUILDSTER_OS">
             <case check="Windows">CodeBlocks - MinGW Makefiles</case>
             <case check="Linux">CodeBlocks - Unix Makefiles</case>
-            <case check="Darwin">CodeBlocks - Unix Makefiles</case>
+            <case check="Darwin">Xcode</case>
             <default><quit></quit></default>
           </switch>
         </generator>
-        <definitions></definitions>
+        <definitions>
+         <definition>
+           <key>CHRONOLATERAL_WITHOUT_MULTIPLAYER</key>
+           <value>1</value>
+         </definition>
+        </definitions>
         <links>
           <link>sfml3d-graphics-*</link>
           <link>sfml3d-window-*</link>

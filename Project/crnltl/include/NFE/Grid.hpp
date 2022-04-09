@@ -67,9 +67,10 @@ namespace NFE
                     {
                         if (other == nullptr)
                         {
-                            return sf3d::Vector3f(sf3d::Vector2f(index),util::INFIN);
+                            return sf3d::Vector3f(static_cast<float>(index.x),static_cast<float>(index.y),util::INFIN);
                         }
-                        sf3d::Vector3f result = sf3d::Vector3f(sf3d::Vector2f(other->getIndex()),util::INFIN);
+                        sf3d::Vector2f temp = sf3d::Vector2f(other->getIndex());
+                        sf3d::Vector3f result = sf3d::Vector3f(temp.x,temp.y,util::INFIN);
                         if (owner != other->getOwner())
                         {
                             return result;

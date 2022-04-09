@@ -23,8 +23,10 @@
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
 #include <TupleSpace/TupleSpace.hpp>
 #include <TupleSpace/TcpConnectionHandlerAgent.hpp>
+#endif
 #include <NFE/CellularAutomaton.hpp>
 
 class Player
@@ -391,7 +393,11 @@ sf3d::Vector3f getProjection(const sf3d::Vector3f& point, const sf3d::Vector3f& 
     return sf3d::Vector3f(getDotProduct(axisFirst,displacement),getDotProduct(axisSecond,displacement),getDotProduct(normal,displacement)); // x = distance along first axis, y = distance along second axis, z = distance along normal
 }
 
+#ifdef CHRONOLATERAL_WITHOUT_MULTIPLAYER
+int run(void* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
+#else
 int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf3d::RenderTexture& frameTexture, const std::vector<std::string>& arguments)
+#endif
 {
     std::string tail = "\n\r";
     std::string victim;
@@ -412,7 +418,9 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     sf3d::Image* cellsImage = nullptr;
     sf3d::Texture* cellsTexture = nullptr;
     sf3d::Sprite* cellsSprite = nullptr;
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     TcpConnectionHandlerAgent* agent = nullptr;
+#endif
     NFE::CellularAutomaton* cells = nullptr;
     unsigned char* maze = nullptr;
     bool role = false;
@@ -607,6 +615,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
     // Keep the mouse cursor within the window
     sf3d::Mouse::setPosition(sf3d::Vector2i(window.getSize()) / 2, window);
 
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     if ((!arguments.empty()) && (tupleSpace != nullptr))
     {
         if (arguments.size() > 1)
@@ -648,6 +657,22 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         }
         camera.setDirection(direction);
     }
+#else
+team = true;
+                players[name] = new Player(height, team);
+                players[name]->self = true;
+        camera.setPosition(sf3d::Vector3f(125.0f, 0.0f, 125.0f)*(team?-1.0f:1.0f));
+        origin = camera.getPosition();
+        yaw = getDirection(sf3d::Vector2f(origin.x, origin.z), sf3d::Vector2f());
+        direction.x = cosf(yaw);
+        direction.z = -sinf(yaw);
+        if (team)
+        {
+            yaw *= -1.0f;
+            direction *= -1.0f;
+        }
+        camera.setDirection(direction);
+#endif
 
     gap /= radius;
 
@@ -826,7 +851,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
 
             camera.setPosition(origin + offset);
             camera.move(sf3d::Vector3f(0.0f, height, 0.0f));
-
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
             if ((agent != nullptr) && (!peers.empty()))
             {
                 sf3d::Vector3f position = origin+offset;
@@ -839,6 +864,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                     packets.push_back(packet);
                 }
             }
+#endif
 
             if (shoot <= 0.0f)
             {
@@ -853,6 +879,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                     bullet->appearance->rotate(pitch*(180.0f/pi), rightVector);
                     bullet->appearance->setPosition(camera.getPosition());
                     bullet->appearance->move(-sf3d::Vector3f(0.0f, height, 0.0f)*0.5f);
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
                     if ((agent != nullptr) && (!peers.empty()))
                     {
                         std::string response = "\tS"+name+"\t"+std::to_string(direction.x)+" "+std::to_string(direction.y)+" "+std::to_string(direction.z)+" "+std::to_string(pitch)+tail;
@@ -860,6 +887,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
                         packet->append(response.c_str(), response.size());
                         packets.push_back(packet);
                     }
+#endif
                     if (shotSound != nullptr)
                     {
                         shotSound->play();
@@ -1030,6 +1058,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         window.draw(frame);
         window.display();
 
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
         if (agent != nullptr)
         {
             Tuple* reception = tupleSpace->get("RECEIVE_PACKET");
@@ -1442,6 +1471,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
             }
             packets.clear();
         }
+#endif
 
         if (!victim.empty())
         {
@@ -1490,6 +1520,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         }
     }
 
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     if ((agent != nullptr) && (result != 3) && (!peers.empty()))
     {
         std::string response = "\tD"+name+tail;
@@ -1501,6 +1532,7 @@ int run(TupleSpace* tupleSpace, sf3d::Font& font, sf3d::RenderWindow& window, sf
         std::cout << message << std::endl;
         tupleSpace->put("PACKET_READY", tuple);
     }
+#endif
 
     for (int i = 0; i != texts.size(); ++i)
     {
@@ -1542,7 +1574,11 @@ int main(int argc, char** argv)
 {
     int result = 0;
     std::vector<std::string> arguments;
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     TupleSpace* tupleSpace = nullptr;
+#else
+    void* tupleSpace = nullptr;
+#endif
     sf3d::Font* font = new sf3d::Font();
     sf3d::RenderWindow* window = new sf3d::RenderWindow();
     sf3d::RenderTexture* frameTexture = new sf3d::RenderTexture();
@@ -1556,6 +1592,7 @@ int main(int argc, char** argv)
         arguments.push_back(std::string(argv[i]));
         std::cout << i << '\t' << arguments.back() << std::endl;
     }
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     if (arguments.size() > 1)
     {
         tupleSpace = new TupleSpace();
@@ -1575,6 +1612,9 @@ int main(int argc, char** argv)
     {
         window->close();
     }
+#else
+result = run(nullptr, *font, *window, *frameTexture, arguments);
+#endif
     delete font;
     delete frameTexture;
     delete window;
@@ -1584,6 +1624,7 @@ int main(int argc, char** argv)
         std::cout << "host disconnected" << std::endl;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+#ifndef CHRONOLATERAL_WITHOUT_MULTIPLAYER
     if (tupleSpace == nullptr)
     {
         NFE::CellularAutomaton* cells = NFE::CellularAutomaton::getConwayGameOfLife(sf3d::Vector2u(25, 25), new NFE::Random());
@@ -1596,5 +1637,6 @@ int main(int argc, char** argv)
         delete cells;
         delete image;
     }
+#endif
     return result;
 }
